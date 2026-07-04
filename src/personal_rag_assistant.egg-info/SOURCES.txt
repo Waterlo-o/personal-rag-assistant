@@ -1,0 +1,11 @@
+LICENSE
+README.md
+pyproject.toml
+src/personal_rag_assistant.egg-info/PKG-INFO
+src/personal_rag_assistant.egg-info/SOURCES.txt
+src/personal_rag_assistant.egg-info/dependency_links.txt
+src/personal_rag_assistant.egg-info/requires.txt
+src/personal_rag_assistant.egg-info/top_level.txt
+src/rag_assistant/__init__.py
+src/rag_assistant/cli.py
+tests/test_cli.py
