@@ -20,9 +20,7 @@ def test_find_nearest_char():
 
 
 def test_chunk_text():
-    text = (
-        "This is a test. This is only a test. " "Please ignore this message. Thank you."
-    )
+    text = "This is a test. This is only a test. Please ignore this message. Thank you."
     chunks = chunk_text(text, chunk_size=20, overlap=5)
 
     # Ensure that the chunks are created correctly
