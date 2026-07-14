@@ -2,7 +2,7 @@ from unittest.mock import patch, Mock
 from rag_assistant.pipeline import answer_question
 
 
-@patch("rag_assistant.pipeline.find_relevent_chunks")
+@patch("rag_assistant.pipeline.find_relevant_chunks")
 def test_answer_question(mock_find_chunks):
     mock_find_chunks.return_value = ["Chunk A", "Chunk B"]
     client = Mock()

@@ -21,7 +21,7 @@ def cosine_similarity(vec_a, vec_b):
     return cosine_sim
 
 
-def find_relevent_chunks(client, query, chunk_embeddings, chunks, top_n=3):
+def find_relevant_chunks(client, query, chunk_embeddings, chunks, top_n=3):
     query_embedding = embed_texts(client, [query])
 
     cosine_sim = []
