@@ -1,9 +1,9 @@
 import numpy as np
 
-DEFAULT_MODEL = "gemini-embedding-001"
+from rag_assistant.constants import DEFAULT_EMBENDDING_MODEL
 
 
-def embed_texts(client, texts, model=DEFAULT_MODEL):
+def embed_texts(client, texts, model=DEFAULT_EMBENDDING_MODEL):
     response = client.models.embed_content(
         model=model,
         contents=texts,

@@ -7,9 +7,13 @@ from dotenv import load_dotenv
 from google.genai.errors import APIError
 from google.genai import types
 
-logger = logging.getLogger(__name__)
+from rag_assistant.constants import DEFAULT_MODEL
+from rag_assistant.pipeline import make_search_tool, answer_with_tools
+from rag_assistant.ingestion.loader import load_file
+from rag_assistant.ingestion.chunker import chunk_text
+from rag_assistant.retrieval.embedder import embed_texts
 
-DEFAULT_MODEL = "gemini-3.1-flash-lite"
+logger = logging.getLogger(__name__)
 
 
 def load_system_prompt(path):
@@ -79,17 +83,29 @@ if __name__ == "__main__":
     root_logger.addHandler(file_handler)
 
     client = get_client()
-    history = []
+
     system_prompt = load_system_prompt("config/system_prompt.txt")
 
-    while True:
-        try:
-            question = input("Enter your question: ")
-            answer, history = ask_with_history(
-                client, history, question, system_prompt=system_prompt
-            )
-            print(answer)
-            print("--------------------------------------------------")
-        except KeyboardInterrupt:
-            print("\nbye!")
-            break
+    document = load_file("data/test_report.txt")
+    chunks = chunk_text(document)
+    chunk_embeddings = embed_texts(client, chunks)
+    search_tool = make_search_tool(client, chunks, chunk_embeddings)
+    answer = answer_with_tools(
+        client,
+        "Какой был доход компании Ромашка за 2023 год?",
+        search_tool,
+        system_prompt,
+    )
+    print(answer)
+
+    # while True:
+    #     try:
+    #         question = input("Enter your question: ")
+    #         answer, history = ask_with_history(
+    #             client, history, question, system_prompt=system_prompt
+    #         )
+    #         print(answer)
+    #         print("--------------------------------------------------")
+    #     except KeyboardInterrupt:
+    #         print("\nbye!")
+    #         break
