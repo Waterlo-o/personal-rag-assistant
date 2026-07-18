@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reading Room — RAG Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #E7EFF6;
+    --panel: #FFFFFF;
+    --panel-alt: #F1F6FB;
+    --ink: #2B3A4A;
+    --muted: #7C8B9C;
+    --accent: #E8A54B;
+    --accent-dim: #C4863A;
+    --line: rgba(43,58,74,0.13);
+    --good: #3FA873;
+    --bad: #D9695F;
+    --radius: 10px;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 12% 15%, rgba(255,255,255,0.9), transparent 42%),
+      radial-gradient(circle at 88% 12%, rgba(255,255,255,0.7), transparent 38%),
+      radial-gradient(circle at 75% 85%, rgba(232,165,75,0.08), transparent 45%);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .display{ font-family: 'Fraunces', serif; }
+  .mono{ font-family: 'IBM Plex Mono', monospace; }
+
+  .statusbar{
+    position: fixed; top:0; left:0; right:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 14px 22px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    z-index: 50;
+    pointer-events:none;
+  }
+  .statusbar .brand{ color: var(--ink); opacity:0.7; pointer-events:auto; }
+  .health{ display:flex; align-items:center; gap:8px; pointer-events:auto; }
+  .health .dot{ width:7px; height:7px; border-radius:50%; background: var(--muted); transition: background .3s; }
+  .health.ok .dot{ background: var(--good); box-shadow: 0 0 6px var(--good); }
+  .health.bad .dot{ background: var(--bad); box-shadow: 0 0 6px var(--bad); }
+
+  .screen{ min-height:100vh; display:none; }
+  .screen.active{ display:block; }
+
+  #start{
+    display:none;
+    min-height:100vh;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding: 90px 24px 60px;
+    text-align:center;
+  }
+  #start.active{ display:flex; }
+  .eyebrow{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    margin-bottom: 18px;
+  }
+  h1.title{
+    font-size: clamp(34px, 5vw, 54px);
+    font-weight: 500;
+    margin: 0 0 14px;
+    line-height: 1.1;
+  }
+  .subtitle{
+    color: var(--muted);
+    max-width: 480px;
+    margin: 0 auto 56px;
+    line-height: 1.6;
+    font-size: 15px;
+  }
+
+  .catalog{
+    display:flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    justify-content:center;
+    max-width: 780px;
+  }
+  .card{
+    width: 300px;
+    min-height: 210px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 26px 24px;
+    text-align: left;
+    cursor: pointer;
+    position: relative;
+    transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+    display:flex;
+    flex-direction:column;
+    box-shadow: 0 4px 18px rgba(43,58,74,0.06);
+  }
+  .card::before{
+    content: attr(data-index);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent-dim);
+    letter-spacing: 0.1em;
+  }
+  .card h3{
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 22px;
+    margin: 14px 0 10px;
+  }
+  .card p{
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.55;
+    margin: 0;
+    flex-grow: 1;
+  }
+  .card .go{
+    margin-top: 18px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-dim);
+    display:flex; align-items:center; gap: 6px;
+  }
+  .card:hover{
+    transform: translateY(-4px);
+    border-color: var(--accent);
+    box-shadow: 0 10px 26px rgba(43,58,74,0.1);
+    background: var(--panel-alt);
+  }
+
+  .uploadbox{
+    display:none;
+    margin-top: 28px;
+    width: 300px;
+    background: var(--panel);
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+    text-align:left;
+  }
+  .uploadbox.active{ display:block; }
+  .uploadbox label{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .filepick{
+    margin-top: 10px;
+    display:flex;
+    align-items:center;
+    gap: 10px;
+  }
+  .filepick input[type=file]{ display:none; }
+  .filepick .btn-choose{
+    border: 1px solid var(--line);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    cursor: pointer;
+    color: var(--ink);
+    background: transparent;
+  }
+  .filepick .btn-choose:hover{ border-color: var(--accent); }
+  .filename{ font-size: 12px; color: var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .btn-primary{
+    margin-top: 16px;
+    width: 100%;
+    background: var(--accent);
+    color: #2B2110;
+    border: none;
+    padding: 11px;
+    border-radius: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .btn-primary:hover{ background: #f2b95f; }
+  .btn-primary:disabled{ background: var(--muted); color: #fff; cursor: wait; }
+
+  .hint{
+    margin-top: 12px;
+    font-size: 11.5px;
+    color: var(--muted);
+    min-height: 14px;
+  }
+  .hint.error{ color: var(--bad); }
+  .hint.success{ color: var(--good); }
+
+  #workspace{
+    display:none;
+    height:100vh;
+    overflow: hidden;
+    padding-top: 54px;
+  }
+  #workspace.active{ display:flex; flex-direction:column; }
+
+  .workbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: 14px 26px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .workbar .doc-meta{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .workbar .doc-meta b{ color: var(--ink); font-weight:500; }
+  .btn-ghost{
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-ghost:hover{ color: var(--ink); border-color: var(--accent); }
+
+  .layout{
+    flex: 1;
+    display:flex;
+    min-height: 0;
+  }
+
+  .docpane{
+    width: 38%;
+    min-width: 280px;
+    border-right: 1px solid var(--line);
+    padding: 24px 0 24px 0;
+    overflow-y: auto;
+    display:flex;
+    background: var(--panel);
+  }
+  .docpane .ticks{
+    width: 34px;
+    flex-shrink:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding-top: 6px;
+    gap: 0;
+  }
+  .tick{
+    width: 100%;
+    display:flex;
+    justify-content:center;
+    padding: 2px 0;
+  }
+  .tick span{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    color: var(--accent-dim);
+    writing-mode: vertical-rl;
+  }
+  .docpane .doctext{
+    flex: 1;
+    padding: 6px 26px 6px 6px;
+    font-family: 'Fraunces', serif;
+    font-size: 15.5px;
+    line-height: 1.75;
+    color: rgba(43,58,74,0.9);
+    white-space: pre-wrap;
+  }
+  .docpane .empty-doc{
+    padding: 40px 26px;
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.7;
+  }
+  .docpane .empty-doc .mono{ display:block; margin-top:10px; font-size:11.5px; color: var(--accent-dim); }
+
+  .chatpane{
+    flex: 1;
+    display:flex;
+    flex-direction:column;
+    min-width: 0;
+    background: var(--bg);
+  }
+  .messages{
+    flex: 1;
+    overflow-y: auto;
+    padding: 26px 30px;
+    display:flex;
+    flex-direction:column;
+    gap: 18px;
+  }
+  .msg{
+    max-width: 72%;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 14.5px;
+    line-height: 1.6;
+  }
+  .msg.user{
+    align-self:flex-end;
+    background: var(--accent);
+    color: #2B2110;
+    border-bottom-right-radius: 3px;
+  }
+  .msg.ai{
+    align-self:flex-start;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-bottom-left-radius: 3px;
+  }
+  .msg.ai .role, .msg.user .role{
+    display:block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin-bottom: 6px;
+  }
+  .msg.pending{ opacity: 0.55; font-style: italic; }
+  .empty-chat{
+    margin: auto;
+    text-align:center;
+    color: var(--muted);
+    font-size: 13.5px;
+    max-width: 320px;
+    line-height: 1.7;
+  }
+
+  .composer{
+    border-top: 1px solid var(--line);
+    padding: 16px 26px 22px;
+    display:flex;
+    gap: 12px;
+    background: var(--panel);
+  }
+  .composer textarea{
+    flex:1;
+    resize:none;
+    background: var(--panel-alt);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--ink);
+    padding: 12px 14px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    height: 46px;
+    max-height: 140px;
+  }
+  .composer textarea:focus{ outline: none; border-color: var(--accent-dim); }
+  .composer button{
+    background: var(--accent);
+    color: #2B2110;
+    border: none;
+    padding: 0 20px;
+    border-radius: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .composer button:disabled{ background: var(--muted); color: #fff; cursor: not-allowed; }
+
+  .apibar{
+    padding: 8px 26px;
+    border-bottom: 1px solid var(--line);
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  ::-webkit-scrollbar{ width: 8px; }
+  ::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="statusbar">
+  <div class="brand mono">rag / reading room</div>
+  <div class="health" id="health">
+    <span class="dot"></span>
+    <span id="health-text">checking server…</span>
+  </div>
+</div>
+
+<section id="start" class="screen">
+  <div class="eyebrow mono">01 — start session</div>
+  <h1 class="title display">Reading Room</h1>
+  <p class="subtitle">A document gets split into fragments, and the AI answers from them. Choose what to work with today.</p>
+
+  <div class="catalog">
+    <div class="card" id="card-new" data-index="A — new">
+      <h3 class="display">Upload a document</h3>
+      <p>Index a new file: it gets split into fragments and replaces the current context on the server.</p>
+      <div class="go">→ choose a file</div>
+    </div>
+    <div class="card" id="card-existing" data-index="B — previous session">
+      <h3 class="display">Continue previous</h3>
+      <p>Use the document that's already indexed on the server — no re-upload needed.</p>
+      <div class="go">→ go to chat</div>
+    </div>
+  </div>
+
+  <div class="uploadbox" id="uploadbox">
+    <label class="mono">File (.txt)</label>
+    <div class="filepick">
+      <label class="btn-choose" for="file-input">Choose file</label>
+      <input type="file" id="file-input" accept=".txt,text/plain">
+      <span class="filename" id="filename">no file selected</span>
+    </div>
+    <button class="btn-primary" id="btn-upload" disabled>Upload &amp; index</button>
+    <div class="hint" id="upload-hint"></div>
+  </div>
+
+  <div class="uploadbox" id="apiconf" style="margin-top:14px;">
+    <label class="mono">Backend address</label>
+    <div class="filepick" style="margin-top:8px;">
+      <input type="text" id="api-base" value="http://localhost:8000" style="flex:1; background:var(--panel-alt); border:1px solid var(--line); border-radius:6px; color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:8px 10px;">
+    </div>
+  </div>
+</section>
+
+<section id="workspace" class="screen">
+  <div class="workbar">
+    <div class="doc-meta">document: <b id="doc-name">—</b> · fragments: <b id="doc-chunks">—</b></div>
+    <button class="btn-ghost" id="btn-switch">← switch document</button>
+  </div>
+
+  <div class="layout">
+    <div class="docpane" id="docpane">
+    </div>
+    <div class="chatpane">
+      <div class="messages" id="messages">
+        <div class="empty-chat" id="empty-chat">
+          Ask a question about the document — the assistant will search the indexed fragments for an answer.
+        </div>
+      </div>
+      <div class="composer">
+        <textarea id="question" placeholder="Ask something about the document…" rows="1"></textarea>
+        <button id="btn-ask">Ask</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    apiBase: 'http://localhost:8000',
+    docName: null,
+    docText: null,
+    chunksCount: null,
+    mode: null,
+  };
+
+  function apiBase(){ return $('api-base').value.replace(/\/$/, ''); }
+
+  async function checkHealth(){
+    const el = $('health'); const txt = $('health-text');
+    try{
+      const res = await fetch(`${apiBase()}/health`);
+      if(!res.ok) throw new Error();
+      el.className = 'health ok';
+      txt.textContent = 'server online';
+    }catch(e){
+      el.className = 'health bad';
+      txt.textContent = 'server unreachable';
+    }
+  }
+  checkHealth();
+  setInterval(checkHealth, 15000);
+
+  const uploadbox = $('uploadbox');
+  const fileInput = $('file-input');
+  const btnUpload = $('btn-upload');
+  const uploadHint = $('upload-hint');
+  let pickedFile = null;
+
+  $('card-new').addEventListener('click', () => {
+    uploadbox.classList.add('active');
+    uploadbox.scrollIntoView({behavior:'smooth', block:'center'});
+  });
+
+  fileInput.addEventListener('change', () => {
+    pickedFile = fileInput.files[0] || null;
+    $('filename').textContent = pickedFile ? pickedFile.name : 'no file selected';
+    btnUpload.disabled = !pickedFile;
+  });
+
+  btnUpload.addEventListener('click', async () => {
+    if(!pickedFile) return;
+    btnUpload.disabled = true;
+    btnUpload.textContent = 'Indexing…';
+    uploadHint.className = 'hint';
+    uploadHint.textContent = '';
+
+    try{
+      const text = await pickedFile.text();
+      const form = new FormData();
+      form.append('file', pickedFile);
+
+      const res = await fetch(`${apiBase()}/upload`, { method: 'POST', body: form });
+      if(!res.ok){
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Error ${res.status}`);
+      }
+      const data = await res.json();
+
+      state.mode = 'new';
+      state.docName = pickedFile.name;
+      state.docText = text;
+      state.chunksCount = data.chunks_count;
+
+      uploadHint.className = 'hint success';
+      uploadHint.textContent = 'Done. Entering the reading room…';
+      setTimeout(enterWorkspace, 500);
+    }catch(e){
+      uploadHint.className = 'hint error';
+      uploadHint.textContent = e.message || 'Failed to upload the document.';
+      btnUpload.disabled = false;
+      btnUpload.textContent = 'Upload & index';
+    }
+  });
+
+  $('card-existing').addEventListener('click', () => {
+    state.mode = 'existing';
+    state.docName = 'loaded earlier';
+    state.docText = null;
+    state.chunksCount = null;
+    enterWorkspace();
+  });
+
+  function enterWorkspace(){
+    $('start').classList.remove('active');
+    $('workspace').classList.add('active');
+
+    $('doc-name').textContent = state.docName || '—';
+    $('doc-chunks').textContent = state.chunksCount ?? 'see server';
+
+    renderDocPane();
+  }
+
+  $('btn-switch').addEventListener('click', () => {
+    $('workspace').classList.remove('active');
+    $('start').classList.add('active');
+    pickedFile = null;
+    fileInput.value = '';
+    $('filename').textContent = 'no file selected';
+    btnUpload.disabled = true;
+    btnUpload.textContent = 'Upload & index';
+    uploadbox.classList.remove('active');
+    uploadHint.textContent = '';
+    $('messages').innerHTML = '<div class="empty-chat" id="empty-chat">Ask a question about the document — the assistant will search the indexed fragments for an answer.</div>';
+  });
+
+  function renderDocPane(){
+    const pane = $('docpane');
+    if(!state.docText){
+      pane.innerHTML = `<div class="empty-doc">
+        This session's text was loaded on the server earlier and isn't available for preview in the browser —
+        the backend doesn't send the document content back yet.
+        <span class="mono">Chat still works as usual: questions go to /ask.</span>
+      </div>`;
+      return;
+    }
+    const size = 600;
+    const parts = [];
+    for(let i = 0; i < state.docText.length; i += size){
+      parts.push(state.docText.slice(i, i + size));
+    }
+    const ticks = parts.map((_, i) => `<div class="tick"><span>F${String(i+1).padStart(2,'0')}</span></div>`).join('');
+    const text = parts.join('\n\n· · ·\n\n');
+    pane.innerHTML = `<div class="ticks">${ticks}</div><div class="doctext">${escapeHtml(text)}</div>`;
+  }
+
+  function escapeHtml(str){
+    return str.replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  }
+
+  const messagesEl = $('messages');
+  const questionEl = $('question');
+  const btnAsk = $('btn-ask');
+
+  function addMessage(role, text, pending=false){
+    const emptyChat = $('empty-chat');
+    if(emptyChat) emptyChat.remove();
+    const div = document.createElement('div');
+    div.className = `msg ${role}${pending ? ' pending' : ''}`;
+    div.innerHTML = `<span class="role">${role === 'user' ? 'you' : 'assistant'}</span>${escapeHtml(text)}`;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  }
+
+  async function askQuestion(){
+    const q = questionEl.value.trim();
+    if(!q) return;
+    questionEl.value = '';
+    questionEl.style.height = '46px';
+    btnAsk.disabled = true;
+
+    addMessage('user', q);
+    const pendingEl = addMessage('ai', 'thinking…', true);
+
+    try{
+      const res = await fetch(`${apiBase()}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q })
+      });
+      if(!res.ok){
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Error ${res.status}`);
+      }
+      const data = await res.json();
+      pendingEl.classList.remove('pending');
+      pendingEl.innerHTML = `<span class="role">assistant</span>${escapeHtml(data.answer)}`;
+    }catch(e){
+      pendingEl.classList.remove('pending');
+      pendingEl.innerHTML = `<span class="role">error</span>${escapeHtml(e.message || 'Failed to get an answer.')}`;
+    }finally{
+      btnAsk.disabled = false;
+      questionEl.focus();
+    }
+  }
+
+  btnAsk.addEventListener('click', askQuestion);
+  questionEl.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' && !e.shiftKey){
+      e.preventDefault();
+      askQuestion();
+    }
+  });
+  questionEl.addEventListener('input', () => {
+    questionEl.style.height = '46px';
+    questionEl.style.height = Math.min(questionEl.scrollHeight, 140) + 'px';
+  });
+
+  $('start').classList.add('active');
+</script>
+</body>
+</html>
