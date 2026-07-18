@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from rag_assistant.cli import get_client, load_system_prompt
@@ -10,6 +11,13 @@ from rag_assistant.pipeline import make_search_tool, answer_with_tools
 import logging
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5500", "http://127.0.0.1:5500"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 logger = logging.getLogger(__name__)
 
