@@ -9,6 +9,8 @@ from rag_assistant.retrieval.embedder import embed_texts
 from rag_assistant.pipeline import make_search_tool, answer_with_tools
 
 import logging
+import sqlite3
+import json
 
 app = FastAPI()
 
@@ -25,10 +27,63 @@ client = get_client()
 system_prompt = load_system_prompt("config/system_prompt.txt")
 document = load_file("data/test_report.txt")
 
-chunks = chunk_text(document)
-chunk_embeddings = embed_texts(client, chunks)
+current_search_tool = None
 
-search_tool = make_search_tool(client, chunks, chunk_embeddings)
+
+def init_db():
+    with sqlite3.connect("data.db") as connection:
+        cursor = connection.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chunks(
+                id INTEGER PRIMARY KEY,
+                text TEXT,
+                embedding TEXT
+            )
+        """)
+        connection.commit()
+
+
+def refresh_search_tool():
+    global current_search_tool
+
+    db_chunks = []
+    db_embeddings = []
+
+    with sqlite3.connect("data.db") as connection:
+        cursor = connection.cursor()
+        cursor.execute("SELECT text, embedding FROM chunks")
+        rows = cursor.fetchall()
+
+        for row in rows:
+            db_chunks.append(row[0])
+            db_embeddings.append(json.loads(row[1]))
+
+    if db_chunks:
+        current_search_tool = make_search_tool(client, db_chunks, db_embeddings)
+    else:
+        current_search_tool = None
+
+
+def seed_db_if_empty():
+    with sqlite3.connect("data.db") as connection:
+        cursor = connection.cursor()
+        cursor.execute("SELECT id FROM chunks")
+        is_empty = cursor.fetchone()
+
+        if is_empty is None:
+            chunks_list = chunk_text(document)
+            chunk_embeddings = embed_texts(client, chunks_list)
+            for chunk, emb in zip(chunks_list, chunk_embeddings):
+                cursor.execute(
+                    "INSERT INTO chunks (text, embedding) VALUES (?, ?)",
+                    (chunk, json.dumps(emb)),
+                )
+            connection.commit()
+
+
+init_db()
+seed_db_if_empty()
+refresh_search_tool()
 
 
 class AskRequest(BaseModel):
@@ -42,34 +97,44 @@ def health_check():
 
 @app.post("/ask")
 def ask_question(request: AskRequest):
-    result = answer_with_tools(client, request.question, search_tool, system_prompt)
+    if current_search_tool is None:
+        raise HTTPException(status_code=400, detail="База документов пуста.")
+
+    result = answer_with_tools(
+        client, request.question, current_search_tool, system_prompt
+    )
     return {"answer": result}
 
 
 @app.post("/upload")
 async def upload_document(file: UploadFile):
-    global chunks, chunk_embeddings, search_tool
-
     raw_content = await file.read()
-
     content = raw_content.decode("utf-8")
 
     try:
-        new_chunks = chunk_text(content)
-        new_chunk_embeddings = embed_texts(client, new_chunks)
-        new_search_tool = make_search_tool(client, new_chunks, new_chunk_embeddings)
+        with sqlite3.connect("data.db") as connection:
+            cursor = connection.cursor()
+            cursor.execute("DELETE FROM chunks")
 
-        chunks = new_chunks
-        chunk_embeddings = new_chunk_embeddings
-        search_tool = new_search_tool
+            new_chunks = chunk_text(content)
+            new_chunk_embeddings = embed_texts(client, new_chunks)
+
+            for chunk, emb in zip(new_chunks, new_chunk_embeddings):
+                cursor.execute(
+                    "INSERT INTO chunks (text, embedding) VALUES (?, ?)",
+                    (chunk, json.dumps(emb)),
+                )
+            connection.commit()
+
+        refresh_search_tool()
+
     except Exception:
         logger.exception(
             "Critical error during document processing: chunking or embedding failed"
         )
-
         raise HTTPException(
             status_code=400,
             detail="Failed to process document: text chunking or embedding generation failed.",
         )
 
-    return {"status": "document loaded", "chunks_count": len(chunks)}
+    return {"status": "document loaded", "chunks_count": len(new_chunks)}
