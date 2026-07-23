@@ -2,39 +2,14 @@ import logging
 
 from google.genai import types
 
-from rag_assistant.retrieval.embedder import find_relevant_chunks
+from rag_assistant.retrieval.embedder import embed_texts
 
 from rag_assistant.constants import DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
 
 
-def answer_question(
-    client, query, chunks, chunk_embedding, system_prompt, model=DEFAULT_MODEL, top_n=3
-):
-    relevant_chunks = find_relevant_chunks(
-        client, query, chunk_embedding, chunks, top_n=top_n
-    )
-
-    if not relevant_chunks:
-        logger.warning("Relevant chunks not found!")
-        return "Couldn't find relevant chunks"
-
-    context = "\n\n---\n\n".join(relevant_chunks)
-
-    prompt = f"Context: {context}\n\nQuestion: {query}\n"
-
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(system_instruction=system_prompt),
-    )
-
-    logger.info(f"Request has been done successfully for question: {query}")
-    return response.text
-
-
-def make_search_tool(client, chunks, chunk_embeddings):
+def make_search_tool(client, collection):
     def search_documents(query: str) -> str:
         """Searches the company financial reports for information relevant to the query.
 
@@ -52,13 +27,18 @@ def make_search_tool(client, chunks, chunk_embeddings):
             separated by "---". Returns an empty string if nothing relevant is found.
         """
 
-        found_chunks = find_relevant_chunks(client, query, chunk_embeddings, chunks)
+        vec_query = embed_texts(client, [query])[0]
 
-        if not found_chunks:
-            final_text = ""
-            return final_text
+        raw_result = collection.query(query_embeddings=[vec_query], n_results=3)
 
-        final_text = "\n\n---\n\n".join(found_chunks)
+        docs = raw_result.get("documents")
+
+        if not docs or not docs[0]:
+            return ""
+
+        result = docs[0]
+
+        final_text = "\n\n---\n\n".join(result)
 
         return final_text
 

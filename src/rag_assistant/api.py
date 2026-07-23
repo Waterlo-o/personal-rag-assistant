@@ -7,10 +7,10 @@ from rag_assistant.ingestion.loader import load_file
 from rag_assistant.ingestion.chunker import chunk_text
 from rag_assistant.retrieval.embedder import embed_texts
 from rag_assistant.pipeline import make_search_tool, answer_with_tools
+from rag_assistant.constants import CHROMA_PATH
 
 import logging
-import sqlite3
-import json
+import chromadb
 
 app = FastAPI()
 
@@ -27,63 +27,27 @@ client = get_client()
 system_prompt = load_system_prompt("config/system_prompt.txt")
 document = load_file("data/test_report.txt")
 
-current_search_tool = None
 
+chr_client = chromadb.PersistentClient(path=CHROMA_PATH)
+collection = chr_client.get_or_create_collection("current_doc")
 
-def init_db():
-    with sqlite3.connect("data.db") as connection:
-        cursor = connection.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chunks(
-                id INTEGER PRIMARY KEY,
-                text TEXT,
-                embedding TEXT
-            )
-        """)
-        connection.commit()
+if collection.count() == 0:
+    chunks_list = chunk_text(document)
+    chunk_embeddings = embed_texts(client, chunks_list)
 
+    valid_ids = []
+    valid_chunks = []
+    valid_emb = []
 
-def refresh_search_tool():
-    global current_search_tool
+    for i, emb in enumerate(chunk_embeddings):
+        if emb is not None:
+            valid_ids.append(str(i))
+            valid_chunks.append(chunks_list[i])
+            valid_emb.append(chunk_embeddings[i])
 
-    db_chunks = []
-    db_embeddings = []
+    collection.add(ids=valid_ids, documents=valid_chunks, embeddings=valid_emb)
 
-    with sqlite3.connect("data.db") as connection:
-        cursor = connection.cursor()
-        cursor.execute("SELECT text, embedding FROM chunks")
-        rows = cursor.fetchall()
-
-        for row in rows:
-            db_chunks.append(row[0])
-            db_embeddings.append(json.loads(row[1]))
-
-    if db_chunks:
-        current_search_tool = make_search_tool(client, db_chunks, db_embeddings)
-    else:
-        current_search_tool = None
-
-
-def seed_db_if_empty():
-    with sqlite3.connect("data.db") as connection:
-        cursor = connection.cursor()
-        cursor.execute("SELECT id FROM chunks")
-        is_empty = cursor.fetchone()
-
-        if is_empty is None:
-            chunks_list = chunk_text(document)
-            chunk_embeddings = embed_texts(client, chunks_list)
-            for chunk, emb in zip(chunks_list, chunk_embeddings):
-                cursor.execute(
-                    "INSERT INTO chunks (text, embedding) VALUES (?, ?)",
-                    (chunk, json.dumps(emb)),
-                )
-            connection.commit()
-
-
-init_db()
-seed_db_if_empty()
-refresh_search_tool()
+current_search_tool = make_search_tool(client, collection)
 
 
 class AskRequest(BaseModel):
@@ -97,8 +61,9 @@ def health_check():
 
 @app.post("/ask")
 def ask_question(request: AskRequest):
-    if current_search_tool is None:
-        raise HTTPException(status_code=400, detail="База документов пуста.")
+    if collection.count() == 0:
+        logger.exception("Documenet base used by API is empty.")
+        raise HTTPException(status_code=400, detail="Document base is empty.")
 
     result = answer_with_tools(
         client, request.question, current_search_tool, system_prompt
@@ -112,21 +77,24 @@ async def upload_document(file: UploadFile):
     content = raw_content.decode("utf-8")
 
     try:
-        with sqlite3.connect("data.db") as connection:
-            cursor = connection.cursor()
-            cursor.execute("DELETE FROM chunks")
+        existing_ids = collection.get()["ids"]
+        if existing_ids:
+            collection.delete(ids=existing_ids)
 
-            new_chunks = chunk_text(content)
-            new_chunk_embeddings = embed_texts(client, new_chunks)
+        chunked_content = chunk_text(content)
+        embed_chunks = embed_texts(client, chunked_content)
 
-            for chunk, emb in zip(new_chunks, new_chunk_embeddings):
-                cursor.execute(
-                    "INSERT INTO chunks (text, embedding) VALUES (?, ?)",
-                    (chunk, json.dumps(emb)),
-                )
-            connection.commit()
+        valid_ids = []
+        valid_chunks = []
+        valid_emb = []
 
-        refresh_search_tool()
+        for i, emb in enumerate(embed_chunks):
+            if emb is not None:
+                valid_ids.append(str(i))
+                valid_chunks.append(chunked_content[i])
+                valid_emb.append(embed_chunks[i])
+
+        collection.add(ids=valid_ids, documents=valid_chunks, embeddings=valid_emb)
 
     except Exception:
         logger.exception(
@@ -137,4 +105,4 @@ async def upload_document(file: UploadFile):
             detail="Failed to process document: text chunking or embedding generation failed.",
         )
 
-    return {"status": "document loaded", "chunks_count": len(new_chunks)}
+    return {"status": "document loaded", "chunks_count": collection.count()}

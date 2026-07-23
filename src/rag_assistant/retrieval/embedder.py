@@ -1,5 +1,3 @@
-import numpy as np
-
 from rag_assistant.constants import DEFAULT_EMBENDDING_MODEL
 
 
@@ -12,22 +10,20 @@ def embed_texts(client, texts, model=DEFAULT_EMBENDDING_MODEL):
     return [embedding.values for embedding in response.embeddings]
 
 
-def cosine_similarity(vec_a, vec_b):
-    num = np.dot(vec_a, vec_b)
-    denum = np.linalg.norm(vec_a) * np.linalg.norm(vec_b)
-    if denum == 0:
-        return 0.0
-    cosine_sim = num / denum
-    return cosine_sim
+# def find_relevant_chunks(client, query, chunk_embeddings, chunks, top_n=3):
 
+#     query_vec = embed_texts(client, [query])[0]
 
-def find_relevant_chunks(client, query, chunk_embeddings, chunks, top_n=3):
-    query_embedding = embed_texts(client, [query])
+#     query_array = np.array(query_vec)
+#     embed_array = np.array(chunk_embeddings)
 
-    cosine_sim = []
-    for i in chunk_embeddings:
-        cosine_sim.append(cosine_similarity(query_embedding[0], i))
+#     dot_product = embed_array @ query_array
 
-    sorted_indices = sorted(enumerate(cosine_sim), key=lambda x: x[1], reverse=True)
-    sorted_chunks = [chunks[i] for i, _ in sorted_indices]
-    return sorted_chunks[:top_n]
+#     query_norm = np.linalg.norm(query_array)
+#     embed_norm = np.linalg.norm(embed_array, axis = 1)
+
+#     similarities = dot_product / (query_norm * embed_norm)
+
+#     best_indices = np.argsort(similarities)[-top_n:][::-1]
+
+#     return [chunks[i] for i in best_indices]
