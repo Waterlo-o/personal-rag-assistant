@@ -6,7 +6,11 @@ from rag_assistant.cli import get_client, load_system_prompt
 from rag_assistant.ingestion.loader import load_file
 from rag_assistant.ingestion.chunker import chunk_text
 from rag_assistant.retrieval.embedder import embed_texts
-from rag_assistant.pipeline import make_search_tool, answer_with_tools
+from rag_assistant.pipeline import (
+    make_search_tool,
+    answer_with_tools,
+    make_neighbor_tool,
+)
 from rag_assistant.constants import CHROMA_PATH
 
 import logging
@@ -22,6 +26,24 @@ app.add_middleware(
 )
 
 logger = logging.getLogger(__name__)
+
+formatter = logging.Formatter("%(asctime)s - [%(levelname)s] - %(name)s - %(message)s")
+
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)  # понижен, чтобы видеть AFC-строки
+console_handler.setFormatter(formatter)
+
+file_handler = logging.FileHandler("app.log", encoding="utf-8")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+root_logger.addHandler(console_handler)
+root_logger.addHandler(file_handler)
 
 client = get_client()
 system_prompt = load_system_prompt("config/system_prompt.txt")
@@ -48,6 +70,7 @@ if collection.count() == 0:
     collection.add(ids=valid_ids, documents=valid_chunks, embeddings=valid_emb)
 
 current_search_tool = make_search_tool(client, collection)
+current_neightboring_tool = make_neighbor_tool(collection)
 
 
 class AskRequest(BaseModel):
@@ -66,7 +89,11 @@ def ask_question(request: AskRequest):
         raise HTTPException(status_code=400, detail="Document base is empty.")
 
     result = answer_with_tools(
-        client, request.question, current_search_tool, system_prompt
+        client,
+        request.question,
+        current_search_tool,
+        current_neightboring_tool,
+        system_prompt,
     )
     return {"answer": result}
 

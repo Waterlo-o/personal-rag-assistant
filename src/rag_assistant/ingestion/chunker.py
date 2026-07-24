@@ -10,7 +10,7 @@ def find_nearest_char(text, position, radius=100, target_char="."):
 
     if not abs_indices:
         if radius >= len(text):
-            return None  # No periods found in the entire content
+            return None
 
         return find_nearest_char(text, position, radius + 100, target_char=target_char)
 
@@ -25,7 +25,7 @@ def chunk_text(text, chunk_size=500, overlap=50):
     while position < len(text):
         chunk_end = find_nearest_char(text, position, radius=100)
         if chunk_end is None:
-            chunk_end = position  # Fallback to chunk_size if no period is found
+            chunk_end = position
         inner_text = text[start : chunk_end + 1]
         chunks.append(inner_text)
         start = find_nearest_char(
